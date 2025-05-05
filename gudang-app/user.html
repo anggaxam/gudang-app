@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard User</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body class="bg-light">
+
+  <div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2>Dashboard User - Lihat Barang</h2>
+      <button class="btn btn-danger" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Tabel Barang -->
+    <div class="card p-3 mb-4">
+      <table class="table table-bordered table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Kode</th>
+            <th>Nama</th>
+            <th>Stok</th>
+            <th>Harga</th>
+            <th>Pilih</th>
+            <th>Jumlah</th>
+          </tr>
+        </thead>
+        <tbody id="tabelBarang"></tbody>
+      </table>
+    </div>
+
+    <!-- Keranjang Belanja -->
+    <div class="card p-3">
+      <h5>Keranjang Belanja</h5>
+      <ul id="keranjangList" class="list-group mb-3"></ul>
+      <div class="d-flex justify-content-between">
+        <strong>Total:</strong>
+        <strong id="totalHarga">Rp 0</strong>
+      </div>
+      <button class="btn btn-success w-100 mt-3" onclick="checkout()">Checkout</button>
+      <button class="btn btn-warning w-100 mt-2" onclick="batalkanCheckout()">Batalkan Checkout</button>
+    </div>
+  </div>
+
+  <!-- Modal Kode Resi dan Pembelian -->
+  <div class="modal fade" id="modalResi" tabindex="-1" aria-labelledby="modalResiLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalResiLabel">Checkout Berhasil</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <h5>Resi Pembelian: <span id="resiCode"></span></h5>
+          <h6>Daftar Barang yang Dibeli:</h6>
+          <ul id="purchasedItems"></ul>
+          <div class="d-flex justify-content-between">
+            <strong>Total:</strong>
+            <strong id="totalAmount">Rp 0</strong>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const KEY = "barangList";
+    const KEY_KERANJANG = "keranjang";
+
+    function loadBarang() {
+      const data = JSON.parse(localStorage.getItem(KEY)) || [];
+      const tbody = document.getElementById("tabelBarang");
+      tbody.innerHTML = "";
+
+      data.forEach((item, index) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${item.kode}</td>
+            <td>${item.nama}</td>
+            <td>${item.stok}</td>
+            <td>Rp ${item.harga.toLocaleString()}</td>
+            <td><button class="btn btn-sm btn-primary" onclick="addToKeranjang(${index})">Pilih</button></td>
+            <td><input type="number" id="jumlah${index}" class="form-control" value="1" min="1" max="${item.stok}" style="width: 80px;"></td>
+          </tr>
+        `;
+      });
+    }
+
+    function addToKeranjang(index) {
+      const barang = JSON.parse(localStorage.getItem(KEY)) || [];
+      const item = barang[index];
+      const jumlahInput = document.getElementById(`jumlah${index}`).value;
+      const jumlah = parseInt(jumlahInput);
+
+      if (isNaN(jumlah) || jumlah <= 0 || jumlah > item.stok) {
+        alert(`Jumlah yang dipilih tidak valid. Maksimal stok: ${item.stok}`);
+        return;
+      }
+
+      let keranjang = JSON.parse(localStorage.getItem(KEY_KERANJANG)) || [];
+      const existingItem = keranjang.find(i => i.kode === item.kode);
+
+      if (existingItem) {
+        alert("Barang sudah ada di keranjang!");
+        return;
+      }
+
+      keranjang.push({ ...item, jumlah });
+      localStorage.setItem(KEY_KERANJANG, JSON.stringify(keranjang));
+      loadKeranjang();
+    }
+
+    function loadKeranjang() {
+      const keranjang = JSON.parse(localStorage.getItem(KEY_KERANJANG)) || [];
+      const keranjangList = document.getElementById("keranjangList");
+      const totalHargaElement = document.getElementById("totalHarga");
+      keranjangList.innerHTML = "";
+
+      let total = 0;
+
+      keranjang.forEach((item, index) => {
+        keranjangList.innerHTML += `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            ${item.nama} (Rp ${item.harga.toLocaleString()}) x ${item.jumlah}
+            <span class="badge bg-primary rounded-pill">${item.jumlah}</span>
+            <button class="btn btn-sm btn-danger ms-2" onclick="hapusDariKeranjang(${index})">Hapus</button>
+          </li>
+        `;
+        total += item.harga * item.jumlah;
+      });
+
+      totalHargaElement.innerText = `Rp ${total.toLocaleString()}`;
+    }
+
+    function hapusDariKeranjang(index) {
+      let keranjang = JSON.parse(localStorage.getItem(KEY_KERANJANG)) || [];
+      keranjang.splice(index, 1); // Hapus item dari keranjang
+      localStorage.setItem(KEY_KERANJANG, JSON.stringify(keranjang));
+      loadKeranjang();
+    }
+
+    function checkout() {
+      const keranjang = JSON.parse(localStorage.getItem(KEY_KERANJANG)) || [];
+      if (keranjang.length === 0) {
+        alert("Keranjang masih kosong!");
+        return;
+      }
+
+      const resiCode = generateResi();
+      let total = 0;
+      const purchasedItems = [];
+
+      keranjang.forEach(item => {
+        purchasedItems.push(`${item.nama} x ${item.jumlah}`);
+        total += item.harga * item.jumlah;
+      });
+
+      // Tampilkan modal checkout
+      document.getElementById("resiCode").innerText = resiCode;
+      document.getElementById("totalAmount").innerText = `Rp ${total.toLocaleString()}`;
+      
+      const purchasedItemsList = document.getElementById("purchasedItems");
+      purchasedItemsList.innerHTML = purchasedItems.map(item => `<li>${item}</li>`).join("");
+
+      // Menampilkan modal
+      const modal = new bootstrap.Modal(document.getElementById("modalResi"));
+      modal.show();
+
+      // Buat Resi dalam bentuk PDF
+      generatePDF(resiCode, purchasedItems, total);
+
+      // Hapus keranjang setelah checkout
+      localStorage.removeItem(KEY_KERANJANG);
+      loadKeranjang();
+    }
+
+    function generateResi() {
+      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let resi = '';
+      for (let i = 0; i < 10; i++) {
+        resi += characters.charAt(Math.floor(Math.random() * characters.length));
+      }
+      return resi;
+    }
+
+    function generatePDF(resiCode, purchasedItems, total) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      // Header Toko
+      doc.setFontSize(18);
+      doc.text('PT Edtrans', 20, 20);
+      doc.setFontSize(12);
+      doc.text('Alamat: Jl. .... 123, Jakarta', 20, 30);
+
+      // Kode Resi
+      doc.setFontSize(14);
+      doc.text(`Resi Pembelian: ${resiCode}`, 20, 40);
+
+      // Daftar Barang
+      doc.setFontSize(12);
+      doc.text('Barang yang Dibeli:', 20, 50);
+      
+      let yPosition = 60;
+      purchasedItems.forEach(item => {
+        doc.text(item, 20, yPosition);
+        yPosition += 10;
+      });
+
+      // Total Harga
+      doc.text(`Total: Rp ${total.toLocaleString()}`, 20, yPosition + 10);
+
+      // Footer
+      doc.text('Terima kasih atas pembelian Anda!', 20, yPosition + 20);
+
+      // Save PDF
+      doc.save('resi-pembelian.pdf');
+    }
+
+    function batalkanCheckout() {
+      const confirmCancel = confirm("Apakah Anda yakin ingin membatalkan checkout? Semua barang di keranjang akan dihapus.");
+      if (confirmCancel) {
+        localStorage.removeItem(KEY_KERANJANG); // Hapus semua item di keranjang
+        loadKeranjang(); // Perbarui tampilan keranjang
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem("loggedIn");
+      window.location.href = "index.html";
+    }
+
+    // Cek autentikasi
+    if (localStorage.getItem("loggedIn") !== "user") {
+      alert("Akses ditolak!");
+      window.location.href = "index.html";
+    } else {
+      loadBarang();
+      loadKeranjang();
+    }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
